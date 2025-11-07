@@ -1,5 +1,7 @@
 package de.rieckpil.courses.book.review;
 
+import org.assertj.core.api.Assertions;
+import org.hamcrest.Matchers;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.RepeatedTest;
@@ -9,6 +11,8 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvFileSource;
 
 import static de.rieckpil.courses.book.review.RandomReviewParameterResolverExtension.RandomReview;
+import static org.hamcrest.MatcherAssert.assertThat;
+import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -62,8 +66,22 @@ class ReviewVerifierTest {
   }
 
   @Test
-  void shouldPassWhenReviewIsGoodHamcrest() {}
+  @DisplayName("should pass when review is good Hamcrest")
+  void shouldPassWhenReviewIsGoodHamcrest() {
+    String review = "I really recommend this book to whoever is interested in advancing their carrier";
+
+    boolean result = reviewVerifier.doesMeetQualityStandards(review);
+    assertThat("ReviewVerifier didn't pass a good review", result, equalTo(true));
+  }
 
   @Test
-  void shouldPassWhenReviewIsGoodAssertJ() {}
+  @DisplayName("should pass when review is good AssertJ")
+  void shouldPassWhenReviewIsGoodAssertJ() {
+    String review = "I really recommend this book to whoever is interested in advancing their carrier";
+
+    boolean result = reviewVerifier.doesMeetQualityStandards(review);
+    Assertions.assertThat(result)
+      .withFailMessage("ReviewVerifier didn't pass a good review")
+      .isEqualTo(true);
+  }
 }
