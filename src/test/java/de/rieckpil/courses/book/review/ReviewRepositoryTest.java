@@ -1,6 +1,7 @@
 package de.rieckpil.courses.book.review;
 
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 
 import javax.sql.DataSource;
 
@@ -10,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
+
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 @DataJpaTest(
     properties = {
@@ -30,8 +33,33 @@ class ReviewRepositoryTest {
   @Autowired private TestEntityManager testEntityManager;
 
   @Test
-  void notNull() throws SQLException {}
+  void notNull() throws SQLException {
+    assertNotNull(entityManager);
+    assertNotNull(cut);
+    assertNotNull(dataSource);
+    assertNotNull(testEntityManager);
+
+    Review review = new Review();
+    review.setContent("Duke");
+    review.setTitle("Review 101");
+    review.setCreatedAt(LocalDateTime.now());
+    review.setRating(5);
+    review.setBook(null);
+    review.setUser(null);
+
+    cut.save(review);
+  }
 
   @Test
-  void transactionalSupportTest() {}
+  void transactionalSupportTest() {
+    Review review = new Review();
+    review.setContent("Duke");
+    review.setTitle("Review 101");
+    review.setCreatedAt(LocalDateTime.now());
+    review.setRating(5);
+    review.setBook(null);
+    review.setUser(null);
+
+    cut.save(review);
+  }
 }
