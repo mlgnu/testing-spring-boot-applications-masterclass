@@ -1,7 +1,20 @@
 package de.rieckpil.courses.book.management;
 
+import io.netty.channel.ChannelOption;
+import io.netty.handler.timeout.ReadTimeoutHandler;
+import io.netty.handler.timeout.WriteTimeoutHandler;
+import okhttp3.mockwebserver.MockResponse;
 import okhttp3.mockwebserver.MockWebServer;
+import okhttp3.mockwebserver.RecordedRequest;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.client.reactive.ReactorClientHttpConnector;
+import org.springframework.web.reactive.function.client.WebClient;
+import reactor.netty.http.client.HttpClient;
+
+import java.io.IOException;
+import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -14,18 +27,156 @@ class OpenLibraryApiClientTest {
 
   private static String VALID_RESPONSE;
 
-  @Test
-  void notNull() {}
+  static {
+    try {
+      VALID_RESPONSE =
+        new String(
+          OpenLibraryApiClientTest.class
+            .getClassLoader()
+            .getResourceAsStream("stubs/openlibrary/success-" + ISBN + ".json")
+            .readAllBytes());
+    } catch (IOException e) {
+      e.printStackTrace();
+    }
+  }
+
+  @BeforeEach
+  public void setup() throws IOException {
+
+    HttpClient httpClient =
+      HttpClient.create()
+        .option(ChannelOption.CONNECT_TIMEOUT_MILLIS, 1_000)
+        .doOnConnected(
+          connection ->
+            connection
+              .addHandlerLast(new ReadTimeoutHandler(1))
+              .addHandlerLast(new WriteTimeoutHandler(1))
+        );
+
+    this.mockWebServer = new MockWebServer();
+    this.mockWebServer.start();
+
+    this.cut = new OpenLibraryApiClient(
+      WebClient.builder()
+        .clientConnector(new ReactorClientHttpConnector(httpClient))
+        .baseUrl(mockWebServer.url("/").toString())
+        .build()
+    );
+  }
 
   @Test
-  void shouldReturnBookWhenResultIsSuccess() throws InterruptedException {}
+  @DisplayName("web server not null")
+  void notNull() {
+    assertNotNull(cut);
+    assertNotNull(mockWebServer);
+  }
 
   @Test
-  void shouldReturnBookWhenResultIsSuccessButLackingAllInformation() {}
+  @DisplayName("should return book when result is success")
+  void shouldReturnBookWhenResultIsSuccess() throws InterruptedException {
+
+    MockResponse mockResponse = new MockResponse()
+      .addHeader("Content-Type", "application/json; charset=utf-8")
+      .setBody(VALID_RESPONSE);
+
+    this.mockWebServer.enqueue(mockResponse);
+
+    Book result = cut.fetchMetadataForBook(ISBN);
+
+    assertEquals("9780596004651", result.getIsbn());
+    assertEquals("Head first Java", result.getTitle());
+    assertEquals("https://covers.openlibrary.org/b/id/388761-S.jpg", result.getThumbnailUrl());
+    assertEquals("Kathy Sierra", result.getAuthor());
+    assertEquals(
+      "Your brain on Java--a learner's guide--Cover.Includes index.", result.getDescription());
+    assertEquals("Java (Computer program language)", result.getGenre());
+    assertEquals("O'Reilly", result.getPublisher());
+    assertEquals(619, result.getPages());
+
+    assertNull(result.getId());
+
+    // to get information into which datapoint is called
+//    RecordedRequest recordedRequest = this.mockWebServer.takeRequest();
+//    assertEquals("/api/books?jscmd=data&format=json&bibkeys=" + ISBN, recordedRequest.getPath());
+  }
 
   @Test
-  void shouldPropagateExceptionWhenRemoteSystemIsDown() {}
+  @DisplayName("should return book when result is successful but lacking all information")
+  void shouldReturnBookWhenResultIsSuccessButLackingAllInformation() {
+
+    String response =
+      """
+     {
+      "9780596004651": {
+        "publishers": [
+          {
+            "name": "O'Reilly"
+          }
+        ],
+        "title": "Head second Java",
+        "authors": [
+          {
+            "url": "https://openlibrary.org/authors/OL1400543A/Kathy_Sierra",
+            "name": "Kathy Sierra"
+          }
+        ],
+        "number_of_pages": 42,
+        "cover": {
+          "small": "https://covers.openlibrary.org/b/id/388761-S.jpg",
+          "large": "https://covers.openlibrary.org/b/id/388761-L.jpg",
+          "medium": "https://covers.openlibrary.org/b/id/388761-M.jpg"
+        }
+       }
+     }
+    """;
+
+    this.mockWebServer.enqueue(new MockResponse()
+      .addHeader("Content-Type", "application/json; charset=utf-8")
+      .setBody(response));
+
+
+    Book result = cut.fetchMetadataForBook(ISBN);
+
+    assertEquals("9780596004651", result.getIsbn());
+    assertEquals("Head second Java", result.getTitle());
+    assertEquals("https://covers.openlibrary.org/b/id/388761-S.jpg", result.getThumbnailUrl());
+    assertEquals("Kathy Sierra", result.getAuthor());
+    assertEquals("n.A", result.getDescription());
+    assertEquals("n.A", result.getGenre());
+    assertEquals("O'Reilly", result.getPublisher());
+    assertEquals(42, result.getPages());
+
+    assertNull(result.getId());
+  }
 
   @Test
-  void shouldRetryWhenRemoteSystemIsSlowOrFailing() {}
+  @DisplayName("should propagate exception when remote system is down")
+  void shouldPropagateExceptionWhenRemoteSystemIsDown() {
+
+    this.mockWebServer.enqueue(new MockResponse()
+      .setResponseCode(500)
+    );
+
+    assertThrows(RuntimeException.class, () -> cut.fetchMetadataForBook(ISBN));
+  }
+
+  @Test
+  @DisplayName("should retry when remote system is slow or failing")
+  void shouldRetryWhenRemoteSystemIsSlowOrFailing() {
+    this.mockWebServer.enqueue(new MockResponse().setResponseCode(500));
+
+    this.mockWebServer.enqueue(new MockResponse()
+      .addHeader("Content-Type", "application/json; charset=utf-8")
+      .setBody(VALID_RESPONSE)
+      .setBodyDelay(2, TimeUnit.SECONDS));
+
+    this.mockWebServer.enqueue(new MockResponse()
+      .addHeader("Content-Type", "application/json; charset=utf-8")
+      .setBody(VALID_RESPONSE));
+
+    Book result = cut.fetchMetadataForBook(ISBN);
+
+    assertEquals("9780596004651", result.getIsbn());
+    assertNull(result.getId());
+  }
 }
